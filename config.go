@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	gv "github.com/hashicorp/go-version"
+	"github.com/itchyny/gojq"
 	gc "github.com/kayac/go-config"
 )
 
@@ -26,6 +27,9 @@ type CounterConfig struct {
 	TargetColumn    string      `yaml:"target_column,omitempty"`
 	CounterType     CounterType `yaml:"counter_type,omitempty"`
 	SipHashKeyHex   string      `yaml:"siphash_key_hex"`
+	JQExpr          string      `yaml:"jq_expr"`
+
+	transformer *gojq.Query
 }
 
 func NewDefaultConfig() *Config {
@@ -59,6 +63,10 @@ func (cfg *Config) Restrict() error {
 	return nil
 }
 
+const (
+	defaultSipHashKey = "0ad102230405360708090a0b0c0d0e0f"
+)
+
 func (cfg *CounterConfig) Restrict() error {
 	if cfg.ID == "" {
 		return errors.New("id is required")
@@ -79,7 +87,14 @@ func (cfg *CounterConfig) Restrict() error {
 		return errors.New("target_column can not set *, if counter_type is approx_count_distinct")
 	}
 	if cfg.CounterType == ApproxCountDistinct && cfg.SipHashKeyHex == "" {
-		cfg.SipHashKeyHex = "0ad102230405360708090a0b0c0d0e0f"
+		cfg.SipHashKeyHex = defaultSipHashKey
+	}
+	if cfg.JQExpr != "" {
+		var err error
+		cfg.transformer, err = gojq.Parse(cfg.JQExpr)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

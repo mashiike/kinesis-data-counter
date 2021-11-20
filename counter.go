@@ -241,6 +241,26 @@ func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, stat
 	default:
 		return fmt.Errorf("unknown counter_type=%d", counter.CounterType)
 	}
+	if counter.transformer != nil {
+		iter := counter.transformer.RunWithContext(ctx, v)
+		for {
+			v, ok := iter.Next()
+			if !ok {
+				break
+			}
+			if err, ok := v.(error); ok {
+				return err
+			}
+			bs, err := json.Marshal(v)
+			if err != nil {
+				return err
+			}
+			if err := app.putRecord(ctx, counter.OutputStreamARN, counter.ID, bs); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	bs, err := json.Marshal(v)
 	if err != nil {
 		return err

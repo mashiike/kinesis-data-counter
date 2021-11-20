@@ -68,6 +68,12 @@ func TestCounter(t *testing.T) {
 			expectedFormat: `{"counter_id":"unique_user_count","counter_type":"approx_count_distinct","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
 			expectedValue:  -2,
 		},
+		{
+			casename:       "jq_expr-user_id",
+			config:         "testdata/jq_expr.yaml",
+			expectedFormat: ` {"name":"access_log.user_count","time":1638357540000,"value":%d}`,
+			expectedValue:  -2,
+		},
 	}
 	for _, m := range []int{10, 100, 200, 500} {
 		for _, n := range []int{1000, 2000, 4000, 8000} {
