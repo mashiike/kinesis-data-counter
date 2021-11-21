@@ -20,6 +20,7 @@ func (arn *ARN) Set(text string) error {
 		arn.ARN.Region = "*"
 		arn.ARN.Service = "*"
 		arn.ARN.Resource = "*/*"
+		return nil
 	}
 	var err error
 	arn.ARN, err = awsarn.Parse(text)
