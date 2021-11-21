@@ -54,30 +54,30 @@ func (c counterTestCase) doTest(t *testing.T, n int, events []*kinesisdatacounte
 
 var inputStream = "arn:aws:kinesis:ap-northeast-1:111122223333:stream/input-stream"
 
-func TestCounter(t *testing.T) {
+func TestCounterSingleShard(t *testing.T) {
 	cases := []counterTestCase{
 		{
 			casename:       "count-request_id",
 			config:         "testdata/config.yaml",
-			expectedFormat: `{"counter_id":"request_count","counter_type":"count","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
+			expectedFormat: `{"event_source_arn":"` + inputStream + `","shard_id":"shard=shardId-000000000000","counter_id":"request_count","counter_type":"count","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
 			expectedValue:  -1,
 		},
 		{
 			casename:       "approx_count_distinct-user_id",
 			config:         "testdata/approx_count_distinct.yaml",
-			expectedFormat: `{"counter_id":"unique_user_count","counter_type":"approx_count_distinct","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
+			expectedFormat: `{"event_source_arn":"` + inputStream + `","shard_id":"shard=shardId-000000000000","counter_id":"unique_user_count","counter_type":"approx_count_distinct","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
 			expectedValue:  -2,
 		},
 		{
 			casename:       "jq_expr-user_id",
 			config:         "testdata/jq_expr.yaml",
-			expectedFormat: ` {"name":"access_log.user_count","time":1638357540000,"value":%d}`,
+			expectedFormat: `{"name":"access_log.user_count","time":1638357540000,"value":%d}`,
 			expectedValue:  -2,
 		},
 	}
 	for _, m := range []int{10, 100, 200, 500} {
 		for _, n := range []int{1000, 2000, 4000, 8000} {
-			events := createEvents(t, inputStream, n, m)
+			events := createEvents(t, inputStream, n, m, 1)
 			for _, c := range cases {
 				if c.expectedValue == -1 {
 					c.expectedValue = int64(n)
@@ -85,7 +85,7 @@ func TestCounter(t *testing.T) {
 				if c.expectedValue == -2 {
 					c.expectedValue = int64(m)
 				}
-				c.doTest(t, n, events)
+				c.doTest(t, n, events[0])
 			}
 		}
 	}
@@ -93,7 +93,7 @@ func TestCounter(t *testing.T) {
 
 var r *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
-func createEvents(t *testing.T, arn string, n int, m int) []*kinesisdatacounter.KinesisTimeWindowEvent {
+func createEvents(t *testing.T, arn string, n int, m int, shardCount int) [][]*kinesisdatacounter.KinesisTimeWindowEvent {
 	t.Helper()
 	userIDs := make([]int64, 0, m)
 	current := int64(1000)
@@ -129,15 +129,16 @@ func createEvents(t *testing.T, arn string, n int, m int) []*kinesisdatacounter.
 		})
 		j++
 	}
-	shardCount := r.Intn(2) + 1
 	var currentEvents []*kinesisdatacounter.KinesisTimeWindowEvent
 	oneEventSize := 1000
-	events := make([]*kinesisdatacounter.KinesisTimeWindowEvent, 0, shardCount*n/oneEventSize)
+	events := make([][]*kinesisdatacounter.KinesisTimeWindowEvent, shardCount)
 
 	for i := 0; i < n; i++ {
 		if i/oneEventSize == 0 {
 			if currentEvents != nil {
-				events = append(events, currentEvents...)
+				for j := 0; j < shardCount; j++ {
+					events[j] = append(events[j], currentEvents[j])
+				}
 			}
 			currentEvents = make([]*kinesisdatacounter.KinesisTimeWindowEvent, shardCount)
 			for j := 0; j < shardCount; j++ {
@@ -148,15 +149,17 @@ func createEvents(t *testing.T, arn string, n int, m int) []*kinesisdatacounter.
 						End:   windowEnd,
 					},
 					EventSourceArn: arn,
-					ShardID:        fmt.Sprintf("Shard-0000%02d", j),
+					ShardID:        fmt.Sprintf("shard=shardId-%012d", j),
 				}
 			}
 		}
 		shard := r.Intn(shardCount)
 		currentEvents[shard].Records = append(currentEvents[shard].Records, records[i])
 	}
-	events = append(events, currentEvents...)
-	events[len(events)-1].IsFinalInvokeForWindow = true
+	for j := 0; j < shardCount; j++ {
+		currentEvents[j].IsFinalInvokeForWindow = true
+		events[j] = append(events[j], currentEvents[j])
+	}
 	return events
 }
 

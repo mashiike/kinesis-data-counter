@@ -226,41 +226,31 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 	resp.State[counter.ID] = states
 	if event.IsFinalInvokeForWindow {
 		log.Printf("[debug] final invoke counter=%s", counter.ID)
-		if err := app.putStateRecord(ctx, counter, states, event); err != nil {
+		if err := app.putStateRecord(ctx, counter, state, event); err != nil {
 			return nil, err
 		}
 	}
 	return resp, nil
 }
 
-func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, states map[string]*CounterState, event *KinesisTimeWindowEvent) error {
+func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, state *CounterState, event *KinesisTimeWindowEvent) error {
 	v := map[string]interface{}{
-		"window_start": event.Window.Start.UnixMilli(),
-		"window_end":   event.Window.End.UnixMilli(),
-		"counter_id":   counter.ID,
-		"counter_type": counter.CounterType.String(),
+		"event_source_arn": event.EventSourceArn,
+		"window_start":     event.Window.Start.UnixMilli(),
+		"window_end":       event.Window.End.UnixMilli(),
+		"counter_id":       counter.ID,
+		"counter_type":     counter.CounterType.String(),
+	}
+	if event.ShardID != "" {
+		v["shard_id"] = event.ShardID
 	}
 	switch counter.CounterType {
 	case Count:
-		total := int64(0)
-		for _, state := range states {
-			total += state.RowCount
-		}
-		v["value"] = total
+		v["value"] = state.RowCount
 	case ApproxCountDistinct:
-		var hllpp *hyperloglog.HyperLogLogPlus
-		for _, state := range states {
-			otherHLLPP, err := decodeBase64HLLPP(state.Base64HLLPP)
-			if err != nil {
-				return err
-			}
-			if hllpp == nil {
-				hllpp = otherHLLPP
-			} else {
-				if err := hllpp.Merge(otherHLLPP); err != nil {
-					return err
-				}
-			}
+		hllpp, err := decodeBase64HLLPP(state.Base64HLLPP)
+		if err != nil {
+			return err
 		}
 		v["value"] = hllpp.Count()
 	default:
