@@ -3,7 +3,6 @@ package kinesisdatacounter
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"time"
 
@@ -185,8 +184,4 @@ func (app *App) invoke(ctx context.Context, state *invokeState, records []kinesi
 	state.state = resp.State
 	log.Printf("[debug] stream=%s shard=%s invoke success after state=%#v", state.streamName, state.shardID, state.state)
 	return state, nil
-}
-
-func (app *App) SetOutput(w io.Writer) {
-	app.output = w
 }

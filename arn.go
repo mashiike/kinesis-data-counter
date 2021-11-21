@@ -42,6 +42,10 @@ func (arn *ARN) IsAmbiguous() bool {
 	return strings.ContainsRune(arn.String(), '*')
 }
 
+func (arn *ARN) IsKinesisDataStream() bool {
+	return arn.Service == "kinesis"
+}
+
 func (arn *ARN) Match(other string) bool {
 	if !arn.IsAmbiguous() {
 		return arn.String() == other

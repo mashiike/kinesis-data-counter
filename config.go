@@ -21,13 +21,14 @@ type Config struct {
 }
 
 type CounterConfig struct {
-	ID              string      `yaml:"id,omitempty"`
-	InputStreamARN  *ARN        `yaml:"input_stream_arn,omitempty"`
-	OutputStreamARN *ARN        `yaml:"output_stream_arn,omitempty"`
-	TargetColumn    string      `yaml:"target_column,omitempty"`
-	CounterType     CounterType `yaml:"counter_type,omitempty"`
-	SipHashKeyHex   string      `yaml:"siphash_key_hex"`
-	JQExpr          string      `yaml:"jq_expr"`
+	ID                 string      `yaml:"id,omitempty"`
+	InputStreamARN     *ARN        `yaml:"input_stream_arn,omitempty"`
+	OutputStreamARN    *ARN        `yaml:"output_stream_arn,omitempty"`
+	AggregateStreamArn *ARN        `yaml:"aggregate_stream_arn,omitempty"`
+	TargetColumn       string      `yaml:"target_column,omitempty"`
+	CounterType        CounterType `yaml:"counter_type,omitempty"`
+	SipHashKeyHex      string      `yaml:"siphash_key_hex"`
+	JQExpr             string      `yaml:"jq_expr"`
 
 	transformer *gojq.Query
 }
@@ -73,6 +74,12 @@ func (cfg *CounterConfig) Restrict() error {
 	}
 	if cfg.OutputStreamARN != nil && cfg.OutputStreamARN.IsAmbiguous() {
 		return fmt.Errorf("output_stream_arn must not ambiguous arn: %s", cfg.OutputStreamARN)
+	}
+	if cfg.AggregateStreamArn != nil && cfg.AggregateStreamArn.IsAmbiguous() {
+		return fmt.Errorf("aggregate_stream_arn must not ambiguous arn: %s", cfg.AggregateStreamArn)
+	}
+	if cfg.AggregateStreamArn != nil && !cfg.AggregateStreamArn.IsKinesisDataStream() {
+		return fmt.Errorf("aggregate_stream_arn must kinesis data stream: %s", cfg.AggregateStreamArn)
 	}
 	if cfg.TargetColumn == "" {
 		return errors.New("target_column is required")

@@ -37,10 +37,24 @@ type FirehoseClient interface {
 }
 
 type App struct {
-	cfg            *Config
-	kinesisClient  KinesisClient
-	firehoseClient FirehoseClient
-	output         io.Writer
+	cfg               *Config
+	kinesisClient     KinesisClient
+	firehoseClient    FirehoseClient
+	output            io.Writer
+	version           string
+	forceIntermediate bool
+}
+
+func (app *App) SetOutput(w io.Writer) {
+	app.output = w
+}
+
+func (app *App) SetVersion(version string) {
+	app.version = version
+}
+
+func (app *App) SetForceIntermediate(f bool) {
+	app.forceIntermediate = f
 }
 
 func New(cfg *Config) (*App, error) {
@@ -126,18 +140,30 @@ func (app *App) Handler(ctx context.Context, event *KinesisTimeWindowEvent) (*Ti
 		return nil, err
 	}
 	resp := newTimeWindowEventResponse()
-	eg := errgroup.Group{}
-	for _, counter := range app.cfg.Counters {
+	eg, egctx := errgroup.WithContext(ctx)
+	for _, c := range app.cfg.Counters {
+		counter := c
 		if counter.InputStreamARN.Match(event.EventSourceArn) {
 			eg.Go(func() error {
-				counterResp, err := app.process(ctx, counter, event)
+				counterResp, err := app.process(egctx, counter, event)
 				if err != nil {
 					return err
 				}
 				resp.MergeInto(counterResp)
 				return nil
 			})
-
+		}
+		if counter.AggregateStreamArn != nil {
+			if counter.AggregateStreamArn.Match(event.EventSourceArn) {
+				eg.Go(func() error {
+					counterResp, err := app.aggregateProcess(egctx, counter, event)
+					if err != nil {
+						return err
+					}
+					resp.MergeInto(counterResp)
+					return nil
+				})
+			}
 		}
 	}
 	if err := eg.Wait(); err != nil {
@@ -150,10 +176,7 @@ const (
 	precision = 16
 )
 
-func (app *App) process(ctx context.Context, counter *CounterConfig, event *KinesisTimeWindowEvent) (*TimeWindowEventResponse, error) {
-	if event.IsWindowTerminatedEarly {
-		log.Println("[warn] state over 1MB, isWindowTerminatedEarly == true")
-	}
+func (app *App) getState(counter *CounterConfig, event *KinesisTimeWindowEvent) *CounterState {
 	states, ok := event.State[counter.ID]
 	if !ok {
 		states = make(map[string]*CounterState, 1)
@@ -164,6 +187,23 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 			CounterType: counter.CounterType,
 		}
 	}
+	return state
+}
+
+func (app *App) setState(counter *CounterConfig, event *KinesisTimeWindowEvent, state *CounterState) map[string]*CounterState {
+	states, ok := event.State[counter.ID]
+	if !ok {
+		states = make(map[string]*CounterState, 1)
+	}
+	states[event.ShardID] = state
+	return states
+}
+
+func (app *App) process(ctx context.Context, counter *CounterConfig, event *KinesisTimeWindowEvent) (*TimeWindowEventResponse, error) {
+	if event.IsWindowTerminatedEarly {
+		log.Println("[warn] state over 1MB, isWindowTerminatedEarly == true")
+	}
+	state := app.getState(counter, event)
 	resp := newTimeWindowEventResponse()
 	records := make([]map[string]interface{}, 0, len(event.Records))
 	for _, record := range event.Records {
@@ -222,10 +262,80 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 	default:
 		return nil, fmt.Errorf("unknown counter_type=%d", counter.CounterType)
 	}
-	states[event.ShardID] = state
-	resp.State[counter.ID] = states
+	if counter.AggregateStreamArn != nil || app.forceIntermediate {
+		log.Printf("[debug] put intermediate record counter=%s", counter.ID)
+		if err := app.putIntermediateRecord(ctx, counter, state, event); err != nil {
+			return nil, err
+		}
+		return resp, nil
+	}
+	resp.State[counter.ID] = app.setState(counter, event, state)
 	if event.IsFinalInvokeForWindow {
 		log.Printf("[debug] final invoke counter=%s", counter.ID)
+		if err := app.putStateRecord(ctx, counter, state, event); err != nil {
+			return nil, err
+		}
+	}
+	return resp, nil
+}
+
+func (app *App) aggregateProcess(ctx context.Context, counter *CounterConfig, event *KinesisTimeWindowEvent) (*TimeWindowEventResponse, error) {
+	if event.IsWindowTerminatedEarly {
+		log.Println("[warn] state over 1MB, isWindowTerminatedEarly == true")
+	}
+	state := app.getState(counter, event)
+	resp := newTimeWindowEventResponse()
+	records := make([]*IntermediateRecord, 0, len(event.Records))
+	for _, record := range event.Records {
+		var v IntermediateRecord
+		if err := json.Unmarshal(record.Kinesis.Data, &v); err != nil {
+			log.Printf("[debug] record unmarshal as json failed: sequence_number=%s err=%s", record.Kinesis.SequenceNumber, err)
+			resp.AddBatchItemFailures(BatchItemFailure{
+				ItemIdentifier: record.Kinesis.SequenceNumber,
+			})
+			continue
+		}
+		if v.CounterID == counter.ID && v.CounterType == counter.CounterType {
+			if err := app.cfg.ValidateVersion(v.CounterVersion); err != nil {
+				log.Printf("[warn] validate viersion failed, maybe intermediate producer and this app version mismatch: %s", err)
+			}
+			records = append(records, &v)
+		}
+	}
+	switch counter.CounterType {
+	case Count:
+		for _, record := range records {
+			if record == nil {
+				continue
+			}
+			state.RowCount += record.State.RowCount
+		}
+	case ApproxCountDistinct:
+		hllpp, err := decodeBase64HLLPP(state.Base64HLLPP)
+		if err != nil {
+			return nil, err
+		}
+		for _, record := range records {
+			otherHLLPP, err := decodeBase64HLLPP(record.State.Base64HLLPP)
+			if err != nil {
+				log.Printf("[warn] record HLLPP decode failed this record skip: %s", err)
+				continue
+			}
+			if err := hllpp.Merge(otherHLLPP); err != nil {
+				log.Printf("[warn] record HLLPP merge failed this record skip: %s", err)
+				continue
+			}
+		}
+		state.Base64HLLPP, err = encodeBase64HLLPP(hllpp)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unknown counter_type=%d", counter.CounterType)
+	}
+	resp.State[counter.ID] = app.setState(counter, event, state)
+	if event.IsFinalInvokeForWindow {
+		log.Printf("[debug] final invoke in aggregate counter=%s", counter.ID)
 		if err := app.putStateRecord(ctx, counter, state, event); err != nil {
 			return nil, err
 		}
@@ -281,6 +391,33 @@ func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, stat
 		return err
 	}
 	return app.putRecord(ctx, counter.OutputStreamARN, counter.ID, bs)
+}
+
+type IntermediateRecord struct {
+	EventSourceARN string             `json:"event_source_arn,omitempty"`
+	ShardID        string             `json:"shard_id,omitempty"`
+	CounterID      string             `json:"counter_id,omitempty"`
+	CounterType    CounterType        `json:"counter_type,omitempty"`
+	CounterVersion string             `json:"counter_version,omitempty"`
+	Window         *KinesisTimeWindow `json:"window,omitempty"`
+	State          *CounterState      `json:"counter_state,omitempty"`
+}
+
+func (app *App) putIntermediateRecord(ctx context.Context, counter *CounterConfig, state *CounterState, event *KinesisTimeWindowEvent) error {
+	v := &IntermediateRecord{
+		EventSourceARN: event.EventSourceArn,
+		ShardID:        event.ShardID,
+		CounterID:      counter.ID,
+		CounterType:    counter.CounterType,
+		CounterVersion: app.version,
+		Window:         event.Window,
+		State:          state,
+	}
+	bs, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return app.putRecord(ctx, counter.AggregateStreamArn, counter.ID, bs)
 }
 
 func (app *App) putRecord(ctx context.Context, destinationARN *ARN, partitionKey string, data []byte) error {

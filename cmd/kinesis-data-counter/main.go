@@ -44,11 +44,13 @@ func main() {
 	}
 	var (
 		config, logLevel, stream, window string
+		forceIntermediate                bool
 	)
-	flag.StringVar(&config, "config", "config.yaml", "kinesisqlite config")
+	flag.StringVar(&config, "config", "config.yaml", "kinesis-data-counter config")
 	flag.StringVar(&logLevel, "log-level", "info", "log level")
 	flag.StringVar(&stream, "stream", "", "kinesis data stream name (cli only)")
 	flag.StringVar(&window, "window", "", "tumbling window size, max 15m (cli only)")
+	flag.BoolVar(&forceIntermediate, "force-intermediate", false, "output intermadeiate record, for debug (cli only)")
 	flag.VisitAll(envToFlag)
 	flag.Parse()
 	filter.MinLevel = logutils.LogLevel(logLevel)
@@ -72,12 +74,15 @@ func main() {
 		log.Printf("[error] init app: %s", err)
 		os.Exit(1)
 	}
+	app.SetVersion(Version)
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	defer cancel()
 	if isLambda() {
 		lambda.StartWithContext(ctx, app.Handler)
 		return
 	}
+
+	// Run as CLI command
 	if stream == "" {
 		log.Println("[error] stream is required")
 		os.Exit(1)
@@ -96,6 +101,7 @@ func main() {
 		os.Exit(1)
 	}
 	app.SetOutput(os.Stdout)
+	app.SetForceIntermediate(forceIntermediate)
 	if err := app.Run(ctx, stream, tumblingWindow); err != nil {
 		if errors.Is(err, context.Canceled) {
 			log.Printf("[debug] run end status: %s", err)
