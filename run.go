@@ -24,7 +24,7 @@ func (app *App) Run(ctx context.Context, streamName string, tumblingWindow time.
 	eg, egctx := errgroup.WithContext(ctx)
 
 	shardIDs := describeOutput.StreamDescription.Shards
-	if len(shardIDs) > 0 {
+	if len(shardIDs) > 1 {
 		app.aggregateChannel = make(chan IntermediateRecord, 100)
 		defer func() {
 			close(app.aggregateChannel)
@@ -244,13 +244,13 @@ func (app *App) runAggregate(ctx context.Context, streamName string, tumblingWin
 				}
 			}
 		case <-ticker.C:
-			log.Printf("[debug] aggregate flush  %s~%s", lastWindow.Start, lastWindow.End)
 			s := state
 			state = nil
 			if s == nil {
 				log.Println("[debug] skip no state")
 				continue
 			}
+			log.Printf("[debug] aggregate flush  %s~%s", lastWindow.Start, lastWindow.End)
 			event := &KinesisTimeWindowEvent{
 				Records:                []events.KinesisEventRecord{},
 				Window:                 lastWindow,
