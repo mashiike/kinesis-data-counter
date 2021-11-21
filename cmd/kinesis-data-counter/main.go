@@ -128,7 +128,7 @@ func main() {
 
 func envToFlag(f *flag.Flag) {
 	name := strings.ToUpper(strings.Replace(f.Name, "-", "_", -1))
-	if s, ok := os.LookupEnv("KINESISQLITE_" + name); ok {
+	if s, ok := os.LookupEnv("KINESIS_DATA_COUNTER_" + name); ok {
 		f.Value.Set(s)
 	}
 }
