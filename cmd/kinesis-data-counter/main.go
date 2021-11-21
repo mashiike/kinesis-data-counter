@@ -46,11 +46,13 @@ func main() {
 		config, logLevel, stream, window string
 		forceIntermediate                bool
 	)
-	flag.StringVar(&config, "config", "config.yaml", "kinesis-data-counter config")
+	instantCounterConfig := kineisdatacounter.NewDefaultCounterConfig()
+	flag.StringVar(&config, "config", "", "kinesis-data-counter config")
 	flag.StringVar(&logLevel, "log-level", "info", "log level")
-	flag.StringVar(&stream, "stream", "", "kinesis data stream name (cli only)")
-	flag.StringVar(&window, "window", "", "tumbling window size, max 15m (cli only)")
-	flag.BoolVar(&forceIntermediate, "force-intermediate", false, "output intermadeiate record, for debug (cli only)")
+	flag.StringVar(&stream, "stream", "", "kinesis data stream name [Only at CLI]")
+	flag.StringVar(&window, "window", "", "tumbling window size, max 15m [Only at CLI]")
+	flag.BoolVar(&forceIntermediate, "force-intermediate", false, "output intermadeiate record, for debug [Only at CLI]")
+	instantCounterConfig.SetFlags(flag.CommandLine)
 	flag.VisitAll(envToFlag)
 	flag.Parse()
 	filter.MinLevel = logutils.LogLevel(logLevel)
@@ -61,8 +63,20 @@ func main() {
 		os.Exit(1)
 	}
 	cfg := kineisdatacounter.NewDefaultConfig()
-	if err := cfg.Load(config); err != nil {
-		log.Printf("[error] load config: %s", err)
+	if config != "" {
+		if err := cfg.Load(config); err != nil {
+			log.Printf("[error] load config: %s", err)
+			os.Exit(1)
+		}
+	} else if !isLambda() {
+		log.Println("[debug] use instant counter config")
+		cfg.Counters = []*kineisdatacounter.CounterConfig{instantCounterConfig}
+		if err := cfg.Restrict(); err != nil {
+			log.Printf("[error] instant counter config: %s", err)
+			os.Exit(1)
+		}
+	} else {
+		log.Println("[error] config is required")
 		os.Exit(1)
 	}
 	if err := cfg.ValidateVersion(Version); err != nil {

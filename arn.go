@@ -13,9 +13,16 @@ type ARN struct {
 	awsarn.ARN
 }
 
-func (arn *ARN) UnmarshalText(text []byte) error {
+func (arn *ARN) Set(text string) error {
+	if text == "*" {
+		arn.ARN.Partition = "*"
+		arn.ARN.AccountID = "*"
+		arn.ARN.Region = "*"
+		arn.ARN.Service = "*"
+		arn.ARN.Resource = "*/*"
+	}
 	var err error
-	arn.ARN, err = awsarn.Parse(string(text))
+	arn.ARN, err = awsarn.Parse(text)
 	if err != nil {
 		return err
 	}
@@ -32,6 +39,10 @@ func (arn *ARN) UnmarshalText(text []byte) error {
 		return nil
 	}
 	return fmt.Errorf("arn is not kinesis data stream or kinesis data firehose: %s", arn.ARN.String())
+}
+
+func (arn *ARN) UnmarshalText(text []byte) error {
+	return arn.Set(string(text))
 }
 
 func (arn *ARN) MarshalText() ([]byte, error) {

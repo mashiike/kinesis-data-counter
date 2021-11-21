@@ -18,3 +18,12 @@ func CounterTypeValuesString() string {
 	}
 	return strings.Join(strValues, ",")
 }
+
+func (t *CounterType) Set(str string) error {
+	ct, err := CounterTypeString(str)
+	if err != nil {
+		return err
+	}
+	*t = ct
+	return nil
+}

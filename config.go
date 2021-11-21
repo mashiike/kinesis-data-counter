@@ -2,6 +2,7 @@ package kinesisdatacounter
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -34,7 +35,9 @@ type CounterConfig struct {
 }
 
 func NewDefaultConfig() *Config {
-	return &Config{}
+	return &Config{
+		RequiredVersion: ">=0.0.0",
+	}
 }
 
 func (cfg *Config) Load(path string) error {
@@ -121,5 +124,25 @@ func (c *Config) ValidateVersion(version string) error {
 	if !c.versionConstraints.Check(v) {
 		return fmt.Errorf("version %s does not satisfy constraints required_version: %s", version, c.versionConstraints)
 	}
+	return nil
+}
+
+//For CLI
+func NewDefaultCounterConfig() *CounterConfig {
+	arn := &ARN{}
+	arn.Set("*")
+	return &CounterConfig{
+		InputStreamARN: arn,
+		ID:             "__instant__",
+		CounterType:    Count,
+		TargetColumn:   "*",
+	}
+}
+
+func (cfg *CounterConfig) SetFlags(f *flag.FlagSet) error {
+	f.Var(&cfg.CounterType, "counter-type", "set instant counter type [Only at CLI]")
+	f.StringVar(&cfg.ID, "counter-id", cfg.ID, "set instant counter id [Only at CLI]")
+	f.StringVar(&cfg.ID, "counter-target-column", cfg.TargetColumn, "set instant counter target column [Only at CLI]")
+	f.StringVar(&cfg.JQExpr, "counter-query", cfg.JQExpr, "set instant counter output query, jq expr [Only at CLI]")
 	return nil
 }
