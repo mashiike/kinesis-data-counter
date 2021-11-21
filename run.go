@@ -24,12 +24,13 @@ func (app *App) Run(ctx context.Context, streamName string, tumblingWindow time.
 	eg, egctx := errgroup.WithContext(ctx)
 
 	shardIDs := describeOutput.StreamDescription.Shards
-	for _, shardID := range shardIDs {
+	for _, s := range shardIDs {
+		shardID := *s.ShardId
 		eg.Go(func() error {
 			return app.getRecords(egctx, &getRecordInput{
 				streamARN:      *describeOutput.StreamDescription.StreamARN,
 				streamName:     streamName,
-				shardID:        *shardID.ShardId,
+				shardID:        shardID,
 				tumblingWindow: tumblingWindow,
 			})
 		})
