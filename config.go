@@ -142,7 +142,7 @@ func NewDefaultCounterConfig() *CounterConfig {
 func (cfg *CounterConfig) SetFlags(f *flag.FlagSet) error {
 	f.Var(&cfg.CounterType, "counter-type", "set instant counter type [Only at CLI]")
 	f.StringVar(&cfg.ID, "counter-id", cfg.ID, "set instant counter id [Only at CLI]")
-	f.StringVar(&cfg.ID, "counter-target-column", cfg.TargetColumn, "set instant counter target column [Only at CLI]")
+	f.StringVar(&cfg.TargetColumn, "counter-target-column", cfg.TargetColumn, "set instant counter target column [Only at CLI]")
 	f.StringVar(&cfg.JQExpr, "counter-query", cfg.JQExpr, "set instant counter output query, jq expr [Only at CLI]")
 	return nil
 }
