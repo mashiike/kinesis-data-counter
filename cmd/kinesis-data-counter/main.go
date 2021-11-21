@@ -44,14 +44,14 @@ func main() {
 	}
 	var (
 		config, logLevel, stream, window string
-		forceIntermediate                bool
+		putRecord                        bool
 	)
 	instantCounterConfig := kineisdatacounter.NewDefaultCounterConfig()
 	flag.StringVar(&config, "config", "", "kinesis-data-counter config")
 	flag.StringVar(&logLevel, "log-level", "info", "log level")
 	flag.StringVar(&stream, "stream", "", "kinesis data stream name [Only at CLI]")
 	flag.StringVar(&window, "window", "", "tumbling window size, max 15m [Only at CLI]")
-	flag.BoolVar(&forceIntermediate, "force-intermediate", false, "output intermadeiate record, for debug [Only at CLI]")
+	flag.BoolVar(&putRecord, "put record", false, "put record configured stream [Only at CLI]")
 	instantCounterConfig.SetFlags(flag.CommandLine)
 	flag.VisitAll(envToFlag)
 	flag.Parse()
@@ -115,7 +115,7 @@ func main() {
 		os.Exit(1)
 	}
 	app.SetOutput(os.Stdout)
-	app.SetForceIntermediate(forceIntermediate)
+	app.SetIgnorePutRecord(!putRecord)
 	if err := app.Run(ctx, stream, tumblingWindow); err != nil {
 		if errors.Is(err, context.Canceled) {
 			log.Printf("[debug] run end status: %s", err)

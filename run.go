@@ -2,6 +2,7 @@ package kinesisdatacounter
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -23,6 +24,17 @@ func (app *App) Run(ctx context.Context, streamName string, tumblingWindow time.
 	eg, egctx := errgroup.WithContext(ctx)
 
 	shardIDs := describeOutput.StreamDescription.Shards
+	if len(shardIDs) > 0 {
+		app.aggregateChannel = make(chan IntermediateRecord, 100)
+		defer func() {
+			close(app.aggregateChannel)
+			app.aggregateChannel = nil
+		}()
+		eg.Go(func() error {
+			return app.runAggregate(egctx, streamName, tumblingWindow)
+		})
+	}
+	log.Printf("[info] start get record from %s", *describeOutput.StreamDescription.StreamARN)
 	for _, s := range shardIDs {
 		shardID := *s.ShardId
 		eg.Go(func() error {
@@ -184,4 +196,75 @@ func (app *App) invoke(ctx context.Context, state *invokeState, records []kinesi
 	state.state = resp.State
 	log.Printf("[debug] stream=%s shard=%s invoke success after state=%#v", state.streamName, state.shardID, state.state)
 	return state, nil
+}
+
+func (app *App) runAggregate(ctx context.Context, streamName string, tumblingWindow time.Duration) error {
+	log.Println("[debug] pending start aggregate process")
+	time.Sleep(time.Until(time.Now().Truncate(tumblingWindow).Add(tumblingWindow / 60)))
+	log.Println("[debug] start aggregate process")
+	ticker := time.NewTicker(tumblingWindow)
+	defer ticker.Stop()
+	var state CounterStates
+	var lastWindow *KinesisTimeWindow
+	var lastEventSourceARN string
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case r := <-app.aggregateChannel:
+			log.Printf("[debug] aggregate record received %s~%s", r.Window.Start, r.Window.End)
+			data, err := json.Marshal(r)
+			if err != nil {
+				return err
+			}
+			lastWindow = r.Window
+			lastEventSourceARN = r.EventSourceARN
+			event := &KinesisTimeWindowEvent{
+				Records: []events.KinesisEventRecord{
+					{
+						Kinesis: events.KinesisRecord{
+							Data: data,
+						},
+					},
+				},
+				Window: r.Window,
+				State:  state,
+			}
+			for _, counter := range app.cfg.Counters {
+				if r.CounterID == counter.ID && r.CounterType == counter.CounterType {
+					resp, err := app.aggregateProcess(ctx, counter, event)
+					if err != nil {
+						return err
+					}
+					if state == nil {
+						state = resp.State
+					} else {
+						state.MergeInto(resp.State)
+					}
+				}
+			}
+		case <-ticker.C:
+			log.Printf("[debug] aggregate flush  %s~%s", lastWindow.Start, lastWindow.End)
+			s := state
+			state = nil
+			if s == nil {
+				log.Println("[debug] skip no state")
+				continue
+			}
+			event := &KinesisTimeWindowEvent{
+				Records:                []events.KinesisEventRecord{},
+				Window:                 lastWindow,
+				State:                  s,
+				EventSourceArn:         lastEventSourceARN,
+				IsFinalInvokeForWindow: true,
+			}
+			for _, counter := range app.cfg.Counters {
+				_, err := app.aggregateProcess(ctx, counter, event)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
 }
