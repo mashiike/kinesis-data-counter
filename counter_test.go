@@ -178,6 +178,7 @@ func buildApp(t *testing.T, path string, buf *bytes.Buffer) *kinesisdatacounter.
 }
 
 type mockKinesisClient struct {
+	kinesisdatacounter.KinesisClient
 	buf *bytes.Buffer
 }
 
@@ -190,6 +191,7 @@ func (m *mockKinesisClient) PutRecord(ctx context.Context, params *kinesis.PutRe
 }
 
 type mockFirestoreClient struct {
+	kinesisdatacounter.FirehoseClient
 	buf *bytes.Buffer
 }
 

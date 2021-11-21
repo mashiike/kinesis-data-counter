@@ -26,6 +26,9 @@ import (
 )
 
 type KinesisClient interface {
+	GetRecords(ctx context.Context, params *kinesis.GetRecordsInput, optFns ...func(*kinesis.Options)) (*kinesis.GetRecordsOutput, error)
+	GetShardIterator(ctx context.Context, params *kinesis.GetShardIteratorInput, optFns ...func(*kinesis.Options)) (*kinesis.GetShardIteratorOutput, error)
+	DescribeStream(ctx context.Context, params *kinesis.DescribeStreamInput, optFns ...func(*kinesis.Options)) (*kinesis.DescribeStreamOutput, error)
 	PutRecord(ctx context.Context, params *kinesis.PutRecordInput, optFns ...func(*kinesis.Options)) (*kinesis.PutRecordOutput, error)
 }
 
@@ -37,6 +40,7 @@ type App struct {
 	cfg            *Config
 	kinesisClient  KinesisClient
 	firehoseClient FirehoseClient
+	output         io.Writer
 }
 
 func New(cfg *Config) (*App, error) {
@@ -116,6 +120,11 @@ func (resp *TimeWindowEventResponse) AddBatchItemFailures(items ...BatchItemFail
 }
 
 func (app *App) Handler(ctx context.Context, event *KinesisTimeWindowEvent) (*TimeWindowEventResponse, error) {
+	var err error
+	event.Records, err = app.deaggregate(ctx, event.Records)
+	if err != nil {
+		return nil, err
+	}
 	resp := newTimeWindowEventResponse()
 	eg := errgroup.Group{}
 	for _, counter := range app.cfg.Counters {
@@ -160,7 +169,7 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 	for _, record := range event.Records {
 		var v map[string]interface{}
 		if err := json.Unmarshal(record.Kinesis.Data, &v); err != nil {
-			log.Printf("[debug] record marshal as json failed: sequence_number=%s err=%s", record.Kinesis.SequenceNumber, err)
+			log.Printf("[debug] record unmarshal as json failed: sequence_number=%s err=%s", record.Kinesis.SequenceNumber, err)
 			resp.AddBatchItemFailures(BatchItemFailure{
 				ItemIdentifier: record.Kinesis.SequenceNumber,
 			})
@@ -216,6 +225,7 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 	states[event.ShardID] = state
 	resp.State[counter.ID] = states
 	if event.IsFinalInvokeForWindow {
+		log.Printf("[debug] final invoke counter=%s", counter.ID)
 		if err := app.putStateRecord(ctx, counter, states, event); err != nil {
 			return nil, err
 		}
@@ -284,8 +294,14 @@ func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, stat
 }
 
 func (app *App) putRecord(ctx context.Context, destinationARN *ARN, partitionKey string, data []byte) error {
+	if app.output != nil {
+		if _, err := app.output.Write(data); err != nil {
+			return err
+		}
+		io.WriteString(app.output, "\n")
+	}
 	if destinationARN == nil {
-		log.Printf("[debug] put record arn is not set partitionKey=%s", partitionKey)
+		log.Printf("[debug] put record arn is not set counter_id=%s", partitionKey)
 		return nil
 	}
 	switch destinationARN.Service {

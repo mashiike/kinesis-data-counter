@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/fatih/color"
@@ -41,10 +43,12 @@ func main() {
 		})
 	}
 	var (
-		config, logLevel string
+		config, logLevel, stream, window string
 	)
 	flag.StringVar(&config, "config", "config.yaml", "kinesisqlite config")
 	flag.StringVar(&logLevel, "log-level", "info", "log level")
+	flag.StringVar(&stream, "stream", "", "kinesis data stream name (cli only)")
+	flag.StringVar(&window, "window", "", "tumbling window size, max 15m (cli only)")
 	flag.VisitAll(envToFlag)
 	flag.Parse()
 	filter.MinLevel = logutils.LogLevel(logLevel)
@@ -68,14 +72,38 @@ func main() {
 		log.Printf("[error] init app: %s", err)
 		os.Exit(1)
 	}
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	defer cancel()
 	if isLambda() {
-		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
-		defer cancel()
 		lambda.StartWithContext(ctx, app.Handler)
 		return
 	}
-	log.Println("[error] runtime is not lambda")
-	os.Exit(1)
+	if stream == "" {
+		log.Println("[error] stream is required")
+		os.Exit(1)
+	}
+	if window == "" {
+		log.Println("[error] window is required")
+		os.Exit(1)
+	}
+	tumblingWindow, err := time.ParseDuration(window)
+	if err != nil {
+		log.Printf("[error] window parse failed: %s", err)
+		os.Exit(1)
+	}
+	if tumblingWindow >= 15*time.Minute {
+		log.Println("[error] window size over 15m")
+		os.Exit(1)
+	}
+	app.SetOutput(os.Stdout)
+	if err := app.Run(ctx, stream, tumblingWindow); err != nil {
+		if errors.Is(err, context.Canceled) {
+			log.Printf("[debug] run end status: %s", err)
+			return
+		}
+		log.Printf("[error] run failed: %s", err)
+		os.Exit(1)
+	}
 }
 
 func envToFlag(f *flag.Flag) {
