@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aead/siphash"
@@ -21,6 +22,7 @@ import (
 	firehosetypes "github.com/aws/aws-sdk-go-v2/service/firehose/types"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/clarkduvall/hyperloglog"
+	"golang.org/x/sync/errgroup"
 )
 
 type KinesisClient interface {
@@ -79,6 +81,7 @@ type BatchItemFailure struct {
 }
 
 type TimeWindowEventResponse struct {
+	mu                sync.Mutex
 	State             map[string]map[string]*CounterState `json:"state"`
 	BatchItemFailures []BatchItemFailure                  `json:"batchItemFailures"`
 }
@@ -91,6 +94,8 @@ func newTimeWindowEventResponse() *TimeWindowEventResponse {
 }
 
 func (resp *TimeWindowEventResponse) MergeInto(other *TimeWindowEventResponse) {
+	resp.mu.Lock()
+	defer resp.mu.Unlock()
 	for id, state := range other.State {
 		resp.State[id] = state
 	}
@@ -99,6 +104,8 @@ func (resp *TimeWindowEventResponse) MergeInto(other *TimeWindowEventResponse) {
 	}
 }
 func (resp *TimeWindowEventResponse) AddBatchItemFailures(items ...BatchItemFailure) {
+	resp.mu.Lock()
+	defer resp.mu.Unlock()
 	if len(items) > 0 {
 		if len(resp.BatchItemFailures) == 0 {
 			resp.BatchItemFailures = append([]BatchItemFailure{}, items...)
@@ -110,14 +117,22 @@ func (resp *TimeWindowEventResponse) AddBatchItemFailures(items ...BatchItemFail
 
 func (app *App) Handler(ctx context.Context, event *KinesisTimeWindowEvent) (*TimeWindowEventResponse, error) {
 	resp := newTimeWindowEventResponse()
+	eg := errgroup.Group{}
 	for _, counter := range app.cfg.Counters {
 		if counter.InputStreamARN.Match(event.EventSourceArn) {
-			counterResp, err := app.process(ctx, counter, event)
-			if err != nil {
-				return nil, err
-			}
-			resp.MergeInto(counterResp)
+			eg.Go(func() error {
+				counterResp, err := app.process(ctx, counter, event)
+				if err != nil {
+					return err
+				}
+				resp.MergeInto(counterResp)
+				return nil
+			})
+
 		}
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 	return resp, nil
 }
