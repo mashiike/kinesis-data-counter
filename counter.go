@@ -374,6 +374,7 @@ func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, stat
 		return fmt.Errorf("unknown counter_type=%d", counter.CounterType)
 	}
 	if counter.transformer != nil {
+		log.Printf("[debug] with transformer `%s`", counter.transformer.String())
 		iter := counter.transformer.RunWithContext(ctx, v)
 		for {
 			v, ok := iter.Next()
@@ -386,6 +387,12 @@ func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, stat
 			bs, err := json.Marshal(v)
 			if err != nil {
 				return err
+			}
+			if app.output != nil {
+				if _, err := app.output.Write(bs); err != nil {
+					return err
+				}
+				io.WriteString(app.output, "\n")
 			}
 			if err := app.putRecord(ctx, counter.OutputStreamARN, counter.ID, bs); err != nil {
 				return err
