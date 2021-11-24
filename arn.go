@@ -86,7 +86,7 @@ func (arn *ARN) Match(other string) bool {
 }
 
 func (arn *ARN) StreamName() string {
-	parts := strings.SplitN(arn.Resource, arn.Resource, 2)
+	parts := strings.SplitN(arn.Resource, "/", 2)
 	return parts[1]
 }
 

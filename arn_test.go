@@ -65,3 +65,28 @@ func TestARNMatch(t *testing.T) {
 		})
 	}
 }
+
+func TestARNStreamName(t *testing.T) {
+	cases := []struct {
+		base     string
+		excepted string
+	}{
+		{
+			base:     "arn:aws:firehose:ap-northeast-1:111122223333:deliverystream/output-stream-system",
+			excepted: "output-stream-system",
+		},
+		{
+			base:     "arn:aws:kinesis:ap-northeast-1:111122223333:stream/output-stream",
+			excepted: "output-stream",
+		},
+	}
+	for i, c := range cases {
+		t.Run(fmt.Sprintf("case%d_%s", i, c.base), func(t *testing.T) {
+			baseARN := &kinesisdatacounter.ARN{}
+			err := baseARN.Set(c.base)
+			require.NoError(t, err, "base must no error")
+			actual := baseARN.StreamName()
+			require.Equal(t, c.excepted, actual)
+		})
+	}
+}
