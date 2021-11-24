@@ -87,6 +87,13 @@ type KinesisTimeWindow struct {
 	End   time.Time `json:"end"`
 }
 
+func (w *KinesisTimeWindow) String() string {
+	if w == nil {
+		return "[now window]"
+	}
+	return fmt.Sprintf("%s ~ %s", w.Start, w.End)
+}
+
 type KinesisTimeWindowEvent struct {
 	Records                 []events.KinesisEventRecord `json:"Records"`
 	Window                  *KinesisTimeWindow          `json:"window"`
@@ -213,6 +220,7 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 	state := app.getState(counter, event)
 	resp := newTimeWindowEventResponse()
 	records := make([]map[string]interface{}, 0, len(event.Records))
+	log.Printf("[info] process %d records window %s", len(event.Records), event.Window)
 	for _, record := range event.Records {
 		var v map[string]interface{}
 		if err := json.Unmarshal(record.Kinesis.Data, &v); err != nil {
@@ -222,10 +230,12 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 			})
 			continue
 		}
+		log.Printf("[debug] record = %#v", v)
 		records = append(records, v)
 	}
 	switch counter.CounterType {
 	case Count:
+		log.Println("[debug] start count")
 		for _, record := range records {
 			if record == nil {
 				continue
@@ -237,7 +247,9 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 			}
 			state.RowCount++
 		}
+		log.Println("[debug] end count")
 	case ApproxCountDistinct:
+		log.Println("[debug] start approx count distinct")
 		hllpp, err := decodeBase64HLLPP(state.Base64HLLPP)
 		if err != nil {
 			return nil, err
@@ -266,7 +278,9 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 		if err != nil {
 			return nil, err
 		}
+		log.Println("[debug] end approx count distinct")
 	default:
+		log.Printf("[debug] unknown counter_type=%s", counter.CounterType)
 		return nil, fmt.Errorf("unknown counter_type=%d", counter.CounterType)
 	}
 	if counter.AggregateStreamArn != nil || app.aggregateChannel != nil {
@@ -293,6 +307,7 @@ func (app *App) aggregateProcess(ctx context.Context, counter *CounterConfig, ev
 	state := app.getState(counter, event)
 	resp := newTimeWindowEventResponse()
 	records := make([]*IntermediateRecord, 0, len(event.Records))
+	log.Printf("[info] aggregate process %d records window %s", len(event.Records), event.Window)
 	for _, record := range event.Records {
 		var v IntermediateRecord
 		if err := json.Unmarshal(record.Kinesis.Data, &v); err != nil {
@@ -338,6 +353,7 @@ func (app *App) aggregateProcess(ctx context.Context, counter *CounterConfig, ev
 			return nil, err
 		}
 	default:
+		log.Printf("[debug] final invoke counter=%s", counter.ID)
 		return nil, fmt.Errorf("unknown counter_type=%d", counter.CounterType)
 	}
 	resp.State[counter.ID] = app.setState(counter, event, state)
@@ -351,6 +367,7 @@ func (app *App) aggregateProcess(ctx context.Context, counter *CounterConfig, ev
 }
 
 func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, state *CounterState, event *KinesisTimeWindowEvent) error {
+	log.Printf("[debug] put state record window %s", event.Window)
 	v := map[string]interface{}{
 		"event_source_arn": event.EventSourceArn,
 		"window_start":     event.Window.Start.UnixMilli(),
@@ -371,6 +388,7 @@ func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, stat
 		}
 		v["value"] = hllpp.Count()
 	default:
+		log.Printf("[debug] final invoke counter=%s", counter.ID)
 		return fmt.Errorf("unknown counter_type=%d", counter.CounterType)
 	}
 	if counter.transformer != nil {
@@ -400,6 +418,8 @@ func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, stat
 		}
 		return nil
 	}
+
+	log.Println("[debug] without transformer")
 	bs, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -444,15 +464,18 @@ func (app *App) putIntermediateRecord(ctx context.Context, counter *CounterConfi
 }
 
 func (app *App) putRecord(ctx context.Context, destinationARN *ARN, partitionKey string, data []byte) error {
+	log.Println("[debug] start put record")
 	if destinationARN == nil {
 		log.Printf("[debug] put record arn is not set counter_id=%s", partitionKey)
 		return nil
 	}
 	if app.ignorePutRecord {
+		log.Println("[debug] ignore put record")
 		return nil
 	}
 	switch destinationARN.Service {
 	case "kinesis":
+		log.Println("[debug] put record to kinesis data stream")
 		output, err := app.kinesisClient.PutRecord(ctx, &kinesis.PutRecordInput{
 			Data:         data,
 			PartitionKey: &partitionKey,
@@ -463,6 +486,7 @@ func (app *App) putRecord(ctx context.Context, destinationARN *ARN, partitionKey
 		}
 		log.Printf("[info] put record kinesis data stream=%s sequence_number=%s shard_id=%s", destinationARN.StreamName(), *output.SequenceNumber, *output.ShardId)
 	case "firehose":
+		log.Println("[debug] put record to kinesis data firehose")
 		output, err := app.firehoseClient.PutRecord(ctx, &firehose.PutRecordInput{
 			DeliveryStreamName: aws.String(destinationARN.StreamName()),
 			Record: &firehosetypes.Record{
@@ -473,6 +497,8 @@ func (app *App) putRecord(ctx context.Context, destinationARN *ARN, partitionKey
 			return err
 		}
 		log.Printf("[info] put record firehose delivery stream=%s record_id=%s", destinationARN.StreamName(), *output.RecordId)
+	default:
+		log.Printf("[warn] unexpected Service=%s, ARN=%s", destinationARN.Service, destinationARN.String())
 	}
 	return nil
 }
