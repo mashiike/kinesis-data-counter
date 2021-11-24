@@ -146,18 +146,32 @@ func (resp *TimeWindowEventResponse) AddBatchItemFailures(items ...BatchItemFail
 		}
 	}
 }
-
 func (app *App) Handler(ctx context.Context, event *KinesisTimeWindowEvent) (*TimeWindowEventResponse, error) {
-	var err error
-	event.Records, err = app.deaggregate(ctx, event.Records)
+	log.Printf("[info] start handler event_source_arn=%s shard_id=%s", event.EventSourceArn, event.ShardID)
+	resp, err := app.handler(ctx, event)
 	if err != nil {
+		log.Printf("[error] lambda function return: %s", err)
 		return nil, err
 	}
+	log.Printf("[info] end handler event_source_arn=%s shard_id=%s batch_items_failures=%d", event.EventSourceArn, event.ShardID, len(resp.BatchItemFailures))
+	return resp, nil
+}
+
+func (app *App) handler(ctx context.Context, event *KinesisTimeWindowEvent) (*TimeWindowEventResponse, error) {
+	var err error
+	log.Printf("[debug] start deaggregate")
+	event.Records, err = app.deaggregate(ctx, event.Records)
+	if err != nil {
+		log.Printf("[debug] failed deaggregate: %s", err)
+		return nil, err
+	}
+	log.Printf("[debug] end deaggregate")
 	resp := newTimeWindowEventResponse()
 	eg, egctx := errgroup.WithContext(ctx)
 	for _, c := range app.cfg.Counters {
 		counter := c
 		if counter.InputStreamARN.Match(event.EventSourceArn) {
+			log.Printf("[info] match counter=%s source=%s", counter.ID, event.EventSourceArn)
 			eg.Go(func() error {
 				counterResp, err := app.process(egctx, counter, event)
 				if err != nil {
@@ -169,6 +183,7 @@ func (app *App) Handler(ctx context.Context, event *KinesisTimeWindowEvent) (*Ti
 		}
 		if counter.AggregateStreamArn != nil {
 			if counter.AggregateStreamArn.Match(event.EventSourceArn) {
+				log.Printf("[info] match as aggregate counter=%s source=%s", counter.ID, event.EventSourceArn)
 				eg.Go(func() error {
 					counterResp, err := app.aggregateProcess(egctx, counter, event)
 					if err != nil {
@@ -181,6 +196,7 @@ func (app *App) Handler(ctx context.Context, event *KinesisTimeWindowEvent) (*Ti
 		}
 	}
 	if err := eg.Wait(); err != nil {
+		log.Printf("[debug] eg.Wait: %s", err)
 		return nil, err
 	}
 	return resp, nil
@@ -404,6 +420,7 @@ func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, stat
 			}
 			bs, err := json.Marshal(v)
 			if err != nil {
+				log.Printf("[error] failed marshal output record with jq_expr: %s", err)
 				return err
 			}
 			if app.output != nil {
@@ -422,6 +439,7 @@ func (app *App) putStateRecord(ctx context.Context, counter *CounterConfig, stat
 	log.Println("[debug] without transformer")
 	bs, err := json.Marshal(v)
 	if err != nil {
+		log.Printf("[error] failed marshal output record: %s", err)
 		return err
 	}
 	if app.output != nil {
@@ -458,6 +476,7 @@ func (app *App) putIntermediateRecord(ctx context.Context, counter *CounterConfi
 	}
 	bs, err := json.Marshal(v)
 	if err != nil {
+		log.Printf("[error] failed marshal intermediate record: %s", err)
 		return err
 	}
 	return app.putRecord(ctx, counter.AggregateStreamArn, counter.ID, bs)
@@ -482,6 +501,7 @@ func (app *App) putRecord(ctx context.Context, destinationARN *ARN, partitionKey
 			StreamName:   aws.String(destinationARN.StreamName()),
 		})
 		if err != nil {
+			log.Printf("[error] failed put record to kinesis data stream: %s", err)
 			return err
 		}
 		log.Printf("[info] put record kinesis data stream=%s sequence_number=%s shard_id=%s", destinationARN.StreamName(), *output.SequenceNumber, *output.ShardId)
@@ -494,6 +514,7 @@ func (app *App) putRecord(ctx context.Context, destinationARN *ARN, partitionKey
 			},
 		})
 		if err != nil {
+			log.Printf("[error] failed put record to kinesis data firehose: %s", err)
 			return err
 		}
 		log.Printf("[info] put record firehose delivery stream=%s record_id=%s", destinationARN.StreamName(), *output.RecordId)

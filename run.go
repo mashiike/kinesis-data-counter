@@ -178,7 +178,7 @@ func (app *App) invoke(ctx context.Context, state *invokeState, records []kinesi
 		})
 	}
 	log.Printf("[debug] stream=%s shard=%s try invoke", state.streamName, state.shardID)
-	resp, err := app.Handler(ctx, &KinesisTimeWindowEvent{
+	resp, err := app.handler(ctx, &KinesisTimeWindowEvent{
 		Records: eventRecords,
 		Window: &KinesisTimeWindow{
 			Start: state.windowStart,
