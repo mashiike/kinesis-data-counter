@@ -18,7 +18,8 @@ require (
 	github.com/hashicorp/go-version v1.3.0
 	github.com/itchyny/gojq v0.12.5
 	github.com/kayac/go-config v0.6.0
-	github.com/stretchr/testify v1.6.1
+	github.com/mashiike/evaluator v0.4.0
+	github.com/stretchr/testify v1.7.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 )
 

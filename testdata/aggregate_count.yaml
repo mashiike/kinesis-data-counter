@@ -1,0 +1,10 @@
+required_version: ">=0.0.0"
+
+counters:
+  - id: request_count
+    input_stream_arn: arn:aws:kinesis:*:*:stream/input-stream
+    aggregate_stream_arn: arn:aws:kinesis:ap-northeast-1:111122223333:stream/aggregate-stream
+    output_stream_arn: arn:aws:kinesis:ap-northeast-1:111122223333:stream/output-stream
+    target_expr:
+      as_string(coalesce(request_id, "")) != ""
+    counter_type: count

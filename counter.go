@@ -22,6 +22,7 @@ import (
 	firehosetypes "github.com/aws/aws-sdk-go-v2/service/firehose/types"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/clarkduvall/hyperloglog"
+	"github.com/mashiike/evaluator"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -256,7 +257,20 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 			if record == nil {
 				continue
 			}
-			if counter.TargetColumn != "*" {
+			if counter.evaluator != nil {
+				val, err := counter.evaluator.Eval(evaluator.Variables(record))
+				if err != nil {
+					bs, _ := json.Marshal(record)
+					log.Printf("[warn] eval failed %s, record=%s", err, string(bs))
+					continue
+				}
+				if val == nil {
+					continue
+				}
+				if b, ok := val.(bool); ok && !b {
+					continue
+				}
+			} else if counter.TargetColumn != "*" {
 				if v, ok := record[counter.TargetColumn]; !ok || v == nil {
 					continue
 				}
@@ -278,9 +292,24 @@ func (app *App) process(ctx context.Context, counter *CounterConfig, event *Kine
 			if record == nil {
 				continue
 			}
-			v, ok := record[counter.TargetColumn]
-			if !ok || v == nil {
-				continue
+			var v interface{}
+			if counter.evaluator != nil {
+				var err error
+				v, err = counter.evaluator.Eval(evaluator.Variables(record))
+				if err != nil {
+					bs, _ := json.Marshal(record)
+					log.Printf("[warn] eval failed %s, record=%s", err, string(bs))
+					continue
+				}
+				if v == nil {
+					continue
+				}
+			} else {
+				var ok bool
+				v, ok = record[counter.TargetColumn]
+				if !ok || v == nil {
+					continue
+				}
 			}
 			bs, err := json.Marshal(v)
 			if err != nil {

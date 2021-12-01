@@ -155,8 +155,9 @@ If you have set a Lambda function that receives the same KinesisTimeWindowEvent 
 #### counter_type: `count`
 
 A counter of type count simply counts.  
-If `target_column` is` * `, count the amount of data flowing in the kinesis data stream.
-If any key is set in `target_column`, the JSON key is set and the number that does not appear null is counted.
+If `target_column` is` * `, count the amount of data flowing in the kinesis data stream.  
+If any key is set in `target_column`, the JSON key is set and the number that does not appear null is counted.  
+If an expression is set in `target_expr`, it evaluates the JSON record and counts it if it is not `nil` or `false`.  
 
 
 #### counter_type: `approx_count_distinct`
@@ -166,6 +167,7 @@ I think you can get a generally correct unique count.
 
 `target_column` is` * `cannot be set.  
 If any key is set in `target_column`, the JSON key is set and the number that does not appear null is counted.  
+If an expression is set in `target_expr`, it evaluates the JSON record and uniquely counts those that do not result in nil.  
 SipHash is used as the column hashing algorithm. If you want to use something other than the default HashKey, specify `siphash_key_hex`  
 
 ### `jq_expr`
