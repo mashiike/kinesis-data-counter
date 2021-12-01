@@ -1,0 +1,11 @@
+required_version: ">=0.0.0"
+
+counters:
+  - id: unique_user_count
+    input_stream_arn: arn:aws:kinesis:*:*:stream/input-stream
+    output_stream_arn: arn:aws:kinesis:ap-northeast-1:111122223333:stream/output-stream
+    target_expr: |
+      if(string_contains(path,"my_page"), user_id, nil)
+    counter_type: approx_count_distinct
+    jq_expr: |
+      {"time":.window_start, "name": "access_log.login_user_count", "value": .value}

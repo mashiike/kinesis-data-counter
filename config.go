@@ -11,6 +11,7 @@ import (
 	gv "github.com/hashicorp/go-version"
 	"github.com/itchyny/gojq"
 	gc "github.com/kayac/go-config"
+	"github.com/mashiike/evaluator"
 )
 
 type Config struct {
@@ -27,11 +28,13 @@ type CounterConfig struct {
 	OutputStreamARN    *ARN        `yaml:"output_stream_arn,omitempty"`
 	AggregateStreamArn *ARN        `yaml:"aggregate_stream_arn,omitempty"`
 	TargetColumn       string      `yaml:"target_column,omitempty"`
+	TargetExpr         string      `yaml:"target_expr,omitempty"`
 	CounterType        CounterType `yaml:"counter_type,omitempty"`
 	SipHashKeyHex      string      `yaml:"siphash_key_hex"`
 	JQExpr             string      `yaml:"jq_expr"`
 
 	transformer *gojq.Query
+	evaluator   evaluator.Evaluator
 }
 
 func NewDefaultConfig() *Config {
@@ -84,8 +87,15 @@ func (cfg *CounterConfig) Restrict() error {
 	if cfg.AggregateStreamArn != nil && !cfg.AggregateStreamArn.IsKinesisDataStream() {
 		return fmt.Errorf("aggregate_stream_arn must kinesis data stream: %s", cfg.AggregateStreamArn)
 	}
-	if cfg.TargetColumn == "" {
-		return errors.New("target_column is required")
+	if cfg.TargetColumn == "" && cfg.TargetExpr == "" {
+		return errors.New("one of either target_column or target_expr is required")
+	}
+	if cfg.TargetExpr != "" {
+		e, err := evaluator.New(cfg.TargetExpr)
+		if err != nil {
+			return fmt.Errorf("target_expr parse failed: %w", err)
+		}
+		cfg.evaluator = e
 	}
 	if cfg.CounterType == 0 {
 		return errors.New("counter_type is required")

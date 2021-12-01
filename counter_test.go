@@ -17,9 +17,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/firehose"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	"github.com/fatih/color"
+	"github.com/fujiwara/logutils"
 	kinesisdatacounter "github.com/mashiike/kinesis-data-counter"
 	"github.com/stretchr/testify/require"
 )
+
+var filter = &logutils.LevelFilter{
+	Levels: []logutils.LogLevel{"debug", "info", "warn", "error"},
+	ModifierFuncs: []logutils.ModifierFunc{
+		nil,
+		logutils.Color(color.FgWhite),
+		logutils.Color(color.FgYellow),
+		logutils.Color(color.FgRed, color.Bold),
+	},
+}
 
 type counterTestCase struct {
 	casename       string
@@ -99,39 +111,48 @@ var inputStream = "arn:aws:kinesis:ap-northeast-1:111122223333:stream/input-stre
 var aggregateStream = "arn:aws:kinesis:ap-northeast-1:111122223333:stream/aggregate-stream"
 
 func TestCounterSingleShard(t *testing.T) {
-	cases := []counterTestCase{
-		{
-			casename:       "count-request_id",
-			config:         "testdata/config.yaml",
-			expectedFormat: `{"event_source_arn":"` + inputStream + `","shard_id":"shardId-000000000000","counter_id":"request_count","counter_type":"count","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
-			expectedValue:  -1,
-		},
-		{
-			casename:       "approx_count_distinct-user_id",
-			config:         "testdata/approx_count_distinct.yaml",
-			expectedFormat: `{"event_source_arn":"` + inputStream + `","shard_id":"shardId-000000000000","counter_id":"unique_user_count","counter_type":"approx_count_distinct","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
-			expectedValue:  -2,
-		},
-		{
-			casename:       "jq_expr-user_id",
-			config:         "testdata/jq_expr.yaml",
-			expectedFormat: `{"name":"access_log.user_count","time":1638357540000,"value":%d}`,
-			expectedValue:  -2,
-		},
-	}
 	for _, m := range []int{10, 100, 200} {
 		for _, n := range []int{1000, 2000, 4000} {
 			events := createEvents(t, inputStream, n, m, 1)
+			cases := []counterTestCase{
+				{
+					casename:       "count-request_id",
+					config:         "testdata/config.yaml",
+					expectedFormat: `{"event_source_arn":"` + inputStream + `","shard_id":"shardId-000000000000","counter_id":"request_count","counter_type":"count","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
+					expectedValue:  int64(n),
+				},
+				{
+					casename:       "approx_count_distinct-user_id",
+					config:         "testdata/approx_count_distinct.yaml",
+					expectedFormat: `{"event_source_arn":"` + inputStream + `","shard_id":"shardId-000000000000","counter_id":"unique_user_count","counter_type":"approx_count_distinct","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
+					expectedValue:  int64(m),
+				},
+				{
+					casename:       "jq_expr-user_id",
+					config:         "testdata/jq_expr.yaml",
+					expectedFormat: `{"name":"access_log.user_count","time":1638357540000,"value":%d}`,
+					expectedValue:  int64(m),
+				},
+				{
+					casename:       "target_expr-user_id",
+					config:         "testdata/target_expr.yaml",
+					expectedFormat: `{"name":"access_log.login_user_count","time":1638357540000,"value":%d}`,
+					expectedValue:  int64(m) / 2,
+				},
+				{
+					casename:       "target_expr-request_count",
+					config:         "testdata/target_expr_count.yaml",
+					expectedFormat: `{"name":"access_log.request_count","time":1638357540000,"value":%d}`,
+					expectedValue:  int64(n),
+				},
+			}
+
 			for _, c := range cases {
-				if c.expectedValue == -1 {
-					c.expectedValue = int64(n)
-				}
-				if c.expectedValue == -2 {
-					c.expectedValue = int64(m)
-				}
 				t.Run(fmt.Sprintf("%s-%d", c.casename, n), func(t *testing.T) {
 					var logBuf bytes.Buffer
-					log.SetOutput(&logBuf)
+					filter.Writer = &logBuf
+					filter.SetMinLevel(logutils.LogLevel("info"))
+					log.SetOutput(filter)
 					defer func() {
 						log.SetOutput(os.Stderr)
 						t.Log(logBuf.String())
@@ -144,24 +165,25 @@ func TestCounterSingleShard(t *testing.T) {
 }
 
 func TestCounterAggregate(t *testing.T) {
-	cases := []counterTestCase{
-		{
-			casename:       "unique_user_count",
-			config:         "testdata/aggregate_approx_count_distinct.yaml",
-			expectedFormat: `{"event_source_arn":"` + aggregateStream + `","shard_id":"shardId-000000000000","counter_id":"unique_user_count","counter_type":"approx_count_distinct","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
-			expectedValue:  -2,
-		},
-	}
+
 	for _, m := range []int{10, 100, 200} {
 		for _, n := range []int{1000, 2000, 4000} {
 			events := createEvents(t, inputStream, n, m, 3)
+			cases := []counterTestCase{
+				{
+					casename:       "unique_user_count",
+					config:         "testdata/aggregate_approx_count_distinct.yaml",
+					expectedFormat: `{"event_source_arn":"` + aggregateStream + `","shard_id":"shardId-000000000000","counter_id":"unique_user_count","counter_type":"approx_count_distinct","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
+					expectedValue:  int64(m),
+				},
+				{
+					casename:       "request_count",
+					config:         "testdata/aggregate_count.yaml",
+					expectedFormat: `{"event_source_arn":"` + aggregateStream + `","shard_id":"shardId-000000000000","counter_id":"request_count","counter_type":"count","value":%d,"window_end":1638357600000,"window_start":1638357540000}`,
+					expectedValue:  int64(n),
+				},
+			}
 			for _, c := range cases {
-				if c.expectedValue == -1 {
-					c.expectedValue = int64(n)
-				}
-				if c.expectedValue == -2 {
-					c.expectedValue = int64(m)
-				}
 				t.Run(fmt.Sprintf("%s-%d", c.casename, n), func(t *testing.T) {
 					var logBuf bytes.Buffer
 					log.SetOutput(&logBuf)
@@ -189,9 +211,13 @@ func createEvents(t *testing.T, arn string, n int, m int, shardCount int) []*kin
 	t.Helper()
 	userIDs := make([]int64, 0, m)
 	current := int64(1000)
+	herfPoint := int64(0)
 	for i := 0; i < m; i++ {
 		current += int64(r.Intn(3) + 1)
 		userIDs = append(userIDs, current)
+		if m/2 == i {
+			herfPoint = current
+		}
 	}
 	rand.Shuffle(m, func(i, j int) { userIDs[i], userIDs[j] = userIDs[j], userIDs[i] })
 	j := 0
@@ -203,10 +229,16 @@ func createEvents(t *testing.T, arn string, n int, m int, shardCount int) []*kin
 			j = 0
 			rand.Shuffle(m, func(k, l int) { userIDs[k], userIDs[l] = userIDs[l], userIDs[k] })
 		}
+		userID := userIDs[j]
+		path := "/"
+		if userID < herfPoint {
+			path = "/my_page"
+		}
 		data, err := json.Marshal(map[string]interface{}{
 			"time":       baseTime.Add(time.Duration(i) * tick),
 			"request_id": i + 1000,
-			"user_id":    userIDs[j],
+			"user_id":    userID,
+			"path":       path,
 		})
 		if err != nil {
 			t.Fatal(err)
