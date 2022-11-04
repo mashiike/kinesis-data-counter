@@ -19,11 +19,11 @@ runs:
       with:
           go-version: 1.19
     - name: install go-licenses
+      shell: bash
       run: go install github.com/google/go-licenses@latest
-      shell: bash
     - name: save licenses
-      run: go mod download && go-licenses save . --force --save_path ./licenses --ignore github.com/awslabs/kinesis-aggregation
       shell: bash
+      run: go mod download && go-licenses save . --force --save_path ./licenses --ignore github.com/awslabs/kinesis-aggregation
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v1
       with:
