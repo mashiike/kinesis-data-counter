@@ -21,6 +21,10 @@ builds:
 release:
   prerelease: true
 archives:
+  files:
+    - LICENSE
+    - CHANGELOG.md
+    - licenses/
 checksum:
   name_template: "checksums.txt"
 snapshot:
