@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.3.1](https://github.com/mashiike/kinesis-data-counter/compare/v0.3.0...v0.3.1) - 2022-11-04
+- Bump actions/setup-go from 1 to 3 by @dependabot in https://github.com/mashiike/kinesis-data-counter/pull/7
+- Bump actions/checkout from 2 to 3 by @dependabot in https://github.com/mashiike/kinesis-data-counter/pull/8
+
 ## [v0.3.0](https://github.com/mashiike/kinesis-data-counter/compare/v0.2.0...v0.3.0) - 2022-11-04
 - add data info logs by @mashiike in https://github.com/mashiike/kinesis-data-counter/pull/3
 - start with context is deprecated by @mashiike in https://github.com/mashiike/kinesis-data-counter/pull/4
