@@ -13,3 +13,12 @@ updates:
         update-types: ["version-update:semver-patch"]
     labels:
       - "dependencies"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "mashiike"
+    labels:
+      - "dependencies"
