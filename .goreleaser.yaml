@@ -19,13 +19,13 @@ builds:
       - amd64
       - arm64
 release:
-  prerelease: true
+  prerelease: false
 archives:
--
-  files:
-    - LICENSE
-    - CHANGELOG.md
-    - licenses/
+  - id: default
+    files:
+      - LICENSE
+      - CHANGELOG.md
+      - licenses/
 checksum:
   name_template: "checksums.txt"
 snapshot:
