@@ -23,7 +23,10 @@ runs:
       run: go install github.com/google/go-licenses@latest
     - name: save licenses
       shell: bash
-      run: go mod download && go-licenses save . --force --save_path ./licenses --ignore github.com/awslabs/kinesis-aggregation
+      run: |
+        go mod download && \
+        go-licenses save . --force --save_path ./licenses --ignore github.com/awslabs/kinesis-aggregation && \
+        find licenses/ | grep \\.go | xargs rm -rf
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v1
       with:
