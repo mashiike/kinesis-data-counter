@@ -92,7 +92,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	defer cancel()
 	if isLambda() {
-		lambda.StartWithContext(ctx, app.Handler)
+		lambda.StartWithOptions(app.Handler, lambda.WithContext(ctx))
 		return
 	}
 
