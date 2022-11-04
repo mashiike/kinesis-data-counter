@@ -21,6 +21,7 @@ builds:
 release:
   prerelease: true
 archives:
+-
   files:
     - LICENSE
     - CHANGELOG.md
