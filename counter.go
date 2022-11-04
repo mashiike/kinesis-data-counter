@@ -521,6 +521,7 @@ func (app *App) putRecord(ctx context.Context, destinationARN *ARN, partitionKey
 		log.Println("[debug] ignore put record")
 		return nil
 	}
+	log.Println("[info]", string(data))
 	switch destinationARN.Service {
 	case "kinesis":
 		log.Println("[debug] put record to kinesis data stream")
