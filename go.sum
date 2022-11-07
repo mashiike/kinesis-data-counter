@@ -23,8 +23,8 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.19 h1:oRHDrwCTVT8ZXi4sr9
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.19/go.mod h1:6Q0546uHDp421okhmmGfbxzq2hBqbXFNpi4k+Q1JnQA=
 github.com/aws/aws-sdk-go-v2/internal/ini v1.3.26 h1:Mza+vlnZr+fPKFKRq/lKGVvM6B/8ZZmNdEopOwSQLms=
 github.com/aws/aws-sdk-go-v2/internal/ini v1.3.26/go.mod h1:Y2OJ+P+MC1u1VKnavT+PshiEuGPyh/7DqxoDNij4/bg=
-github.com/aws/aws-sdk-go-v2/service/firehose v1.14.21 h1:EKDd9Sw0A+nQzu+Zhb2VXfCek5XhxjllqQ8dRiWYAFs=
-github.com/aws/aws-sdk-go-v2/service/firehose v1.14.21/go.mod h1:vbq9arSe5Aea0stKmuye07Aw7fWFjG4l4QWjJgGZqbM=
+github.com/aws/aws-sdk-go-v2/service/firehose v1.14.22 h1:XQmegBm7AoJp8hlvF6CkgyX+RVuAMP5S7E3XH4HpPPY=
+github.com/aws/aws-sdk-go-v2/service/firehose v1.14.22/go.mod h1:vbq9arSe5Aea0stKmuye07Aw7fWFjG4l4QWjJgGZqbM=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.19 h1:GE25AWCdNUPh9AOJzI9KIJnja7IwUc1WyUqz/JTyJ/I=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.19/go.mod h1:02CP6iuYP+IVnBX5HULVdSAku/85eHB2Y9EsFhrkEwU=
 github.com/aws/aws-sdk-go-v2/service/kinesis v1.15.21 h1:a7yiLIXxpCPL9bGNfvjZVsA7LI4W7NVS0/ZMYYIT6kE=
