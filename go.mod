@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.17.1
 	github.com/aws/aws-sdk-go-v2/config v1.17.10
 	github.com/aws/aws-sdk-go-v2/service/firehose v1.14.21
-	github.com/aws/aws-sdk-go-v2/service/kinesis v1.15.21
+	github.com/aws/aws-sdk-go-v2/service/kinesis v1.15.24
 	github.com/awslabs/kinesis-aggregation/go v0.0.0-20221019091459-b7a3c07c3df3
 	github.com/clarkduvall/hyperloglog v0.0.0-20171127014514-a0107a5d8004
 	github.com/fatih/color v1.13.0
